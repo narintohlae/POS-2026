@@ -3,199 +3,249 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nexus Ultra POS | 50K Pro</title>
+    <title>Nexus POS 2026 | Inventory Management</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700&family=Anuphan:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;600;700&display=swap');
-        body { font-family: 'Anuphan', sans-serif; background: #f1f5f9; height: 100vh; overflow: hidden; }
-        .glass-panel { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); border: 1px solid #ffffff; }
-        .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; }
-        #scroll-container { scroll-behavior: smooth; }
+        :root {
+            --glass: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --accent: #00f2ff;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', 'Anuphan', sans-serif;
+            background: radial-gradient(circle at top left, #0f172a, #020617);
+            color: #f1f5f9;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .glass-panel {
+            background: var(--glass);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #00f2ff 0%, #006aff 100%);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 20px rgba(0, 242, 255, 0.4);
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 10px; }
+
+        .loader {
+            border-top-color: var(--accent);
+            animation: spinner 0.6s linear infinite;
+        }
+
+        @keyframes spinner {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
-<body class="flex flex-col">
+<body class="p-4 md:p-8">
 
-    <header class="h-20 bg-white border-b flex items-center px-6 gap-6 shrink-0">
-        <div class="flex items-center gap-3">
-            <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold">N</div>
-            <h1 class="text-xl font-bold hidden md:block">Nexus Ultra</h1>
-        </div>
+    <div id="loading" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950">
+        <div class="loader w-12 h-12 border-4 border-slate-700 rounded-full mb-4"></div>
+        <p class="text-blue-400 font-medium tracking-widest animate-pulse">SYNCING DATA...</p>
+    </div>
+
+    <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        <div class="flex-1 relative">
-            <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-            <input type="text" id="search-input" oninput="handleSearch(this.value)" 
-                placeholder="ค้นหาด่วนจาก 50,000 รายการ (รหัส, ชื่อ, บาร์โค้ด)..." 
-                class="w-full pl-12 pr-4 py-3 rounded-2xl bg-slate-100 border-none focus:ring-2 ring-blue-500 outline-none text-lg">
-        </div>
-
-        <div class="flex items-center gap-4">
-            <button onclick="fetchData()" class="p-3 text-slate-500 hover:bg-slate-100 rounded-xl transition-all">
-                <i class="fas fa-sync-alt" id="sync-icon"></i>
-            </button>
-            <div id="status-badge" class="px-3 py-1 bg-green-100 text-green-600 rounded-full text-xs font-bold">
-                Online
+        <header class="lg:col-span-12 flex justify-between items-center mb-4">
+            <div>
+                <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-cyan-300">
+                    NEXUS POS <span class="text-xs font-light text-slate-500 align-top">v2026.1</span>
+                </h1>
+                <p id="status-text" class="text-xs text-slate-400 mt-1 italic">Initializing modules...</p>
             </div>
-        </div>
-    </header>
-
-    <main class="flex flex-1 overflow-hidden">
-        
-        <section class="flex-1 flex flex-col p-6 overflow-hidden">
-            <div class="flex justify-between items-center mb-4">
-                <div class="text-slate-500 text-sm">
-                    พบสินค้า <span id="count-display" class="font-bold text-blue-600">0</span> รายการ
-                </div>
-                <div class="flex gap-2">
-                    <button onclick="switchTab('pos')" class="px-4 py-2 bg-white rounded-lg shadow-sm text-sm font-medium">ขาย</button>
-                    <button onclick="switchTab('inventory')" class="px-4 py-2 bg-white rounded-lg shadow-sm text-sm font-medium">คลัง</button>
-                </div>
+            <div class="flex gap-4">
+                <button onclick="fetchData()" class="glass-panel px-4 py-2 text-sm hover:bg-white/5 transition">Refresh Sheet</button>
+                <div class="glass-panel px-4 py-2 text-sm border-emerald-500/30 text-emerald-400">System Online</div>
             </div>
+        </header>
 
-            <div id="scroll-container" class="flex-1 overflow-y-auto pr-2" onscroll="checkScroll(this)">
-                <div id="product-list" class="product-grid">
-                    </div>
-                <div id="load-more-trigger" class="py-10 text-center text-slate-400 text-sm">
-                    <i class="fas fa-circle-notch fa-spin mr-2"></i> กำลังโหลดเพิ่ม...
-                </div>
-            </div>
-        </section>
-
-        <aside class="w-96 bg-white border-l flex flex-col shadow-2xl z-10">
-            <div class="p-6 border-b flex justify-between items-center">
-                <h2 class="font-bold text-lg">รายการชำระเงิน</h2>
-                <button onclick="clearCart()" class="text-red-500 text-sm hover:underline">ล้างรถเข็น</button>
-            </div>
+        <div class="lg:col-span-8 space-y-6">
             
-            <div id="cart-items" class="flex-1 overflow-y-auto p-4 space-y-3">
-                <div class="text-center py-20 text-slate-400">
-                    <i class="fas fa-shopping-basket text-4xl mb-4 block opacity-20"></i>
-                    รถเข็นว่างเปล่า
+            <div class="grid grid-cols-3 gap-4">
+                <div class="glass-panel p-4">
+                    <p class="text-xs text-slate-400 uppercase tracking-wider">Total Items</p>
+                    <p id="total-items" class="text-2xl font-bold">0</p>
+                </div>
+                <div class="glass-panel p-4">
+                    <p class="text-xs text-slate-400 uppercase tracking-wider">Inventory Value</p>
+                    <p id="total-value" class="text-2xl font-bold text-cyan-400">฿0.00</p>
+                </div>
+                <div class="glass-panel p-4 border-blue-500/20">
+                    <p class="text-xs text-slate-400 uppercase tracking-wider">Session Sales</p>
+                    <p id="session-sales" class="text-2xl font-bold">0</p>
                 </div>
             </div>
 
-            <div class="p-6 bg-slate-50 space-y-4">
-                <div class="flex justify-between text-slate-500">
-                    <span>จำนวนรายการ</span>
-                    <span id="cart-count">0</span>
+            <div class="glass-panel overflow-hidden flex flex-col h-[600px]">
+                <div class="p-6 border-b border-white/10 flex justify-between items-center bg-white/5">
+                    <h2 class="text-xl font-semibold">Inventory Catalogue</h2>
+                    <div class="relative w-72">
+                        <input type="text" id="searchInput" oninput="filterTable()" 
+                               placeholder="Search name or scan barcode..." 
+                               class="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-2 focus:outline-none focus:border-cyan-500 transition text-sm">
+                    </div>
                 </div>
-                <div class="flex justify-between text-2xl font-bold text-slate-800">
-                    <span>ยอดรวม</span>
-                    <span id="total-amount" class="text-blue-600">฿0.00</span>
+                
+                <div class="overflow-y-auto custom-scrollbar flex-grow">
+                    <table class="w-full text-left text-sm">
+                        <thead class="sticky top-0 bg-slate-900 text-slate-400">
+                            <tr>
+                                <th class="p-4 font-medium">รหัสสินค้า</th>
+                                <th class="p-4 font-medium">ชื่อสินค้า</th>
+                                <th class="p-4 font-medium text-center">หน่วย</th>
+                                <th class="p-4 font-medium text-right">ราคา</th>
+                                <th class="p-4 font-medium text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventoryBody" class="divide-y divide-white/5">
+                            </tbody>
+                    </table>
                 </div>
-                <button onclick="processSale()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-bold text-lg shadow-lg shadow-blue-200 transition-all transform active:scale-95">
-                    ชำระเงิน (F10)
-                </button>
             </div>
-        </aside>
-    </main>
+        </div>
+
+        <div class="lg:col-span-4">
+            <div class="glass-panel sticky top-8 flex flex-col h-[calc(100vh-140px)] border-blue-500/20">
+                <div class="p-6 border-b border-white/10">
+                    <h2 class="text-xl font-semibold flex items-center gap-2">
+                        Current Order
+                        <span id="cart-count" class="bg-blue-600 text-[10px] px-2 py-0.5 rounded-full">0</span>
+                    </h2>
+                </div>
+
+                <div id="cartItems" class="flex-grow overflow-y-auto p-6 space-y-4 custom-scrollbar">
+                    <div id="empty-cart" class="text-center py-20 opacity-30">
+                        <svg class="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
+                        <p>Cart is empty</p>
+                    </div>
+                </div>
+
+                <div class="p-6 bg-white/5 rounded-b-3xl space-y-4">
+                    <div class="flex justify-between items-center">
+                        <span class="text-slate-400">Subtotal</span>
+                        <span id="cart-subtotal">฿0.00</span>
+                    </div>
+                    <div class="flex justify-between items-center text-xl font-bold text-cyan-400">
+                        <span>Total</span>
+                        <span id="cart-total">฿0.00</span>
+                    </div>
+                    <button onclick="checkout()" class="btn-primary w-full py-4 rounded-2xl font-bold uppercase tracking-widest text-sm">
+                        Process Transaction
+                    </button>
+                    <button onclick="clearCart()" class="w-full text-xs text-slate-500 hover:text-red-400 transition">
+                        Clear Order
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
-        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTaJT9WaWQ7-BDK5vkjQwrcZ9W86RATTgFsgH7dsAfhAOqbpA878B22qCbQVhQu24gZjQvw9MwDedQt/pub?output=csv';
-        
-        let allItems = []; // 50,000 รายการหลัก
-        let filteredItems = []; // รายการที่ผ่านการกรอง/ค้นหา
+        const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTaJT9WaWQ7-BDK5vkjQwrcZ9W86RATTgFsgH7dsAfhAOqbpA878B22qCbQVhQu24gZjQvw9MwDedQt/pub?output=csv';
+        let inventory = [];
         let cart = [];
-        let itemsToShow = 60; // จำนวนที่จะแสดงในตอนแรก
-        let searchTimeout = null;
+        let sessionSalesCount = 0;
 
-        // 1. Fetch Data with Speed Optimization
+        // --- Data Handling ---
+
         async function fetchData() {
-            const syncIcon = document.getElementById('sync-icon');
-            syncIcon.classList.add('fa-spin');
+            const statusText = document.getElementById('status-text');
+            const loading = document.getElementById('loading');
             
             try {
-                const response = await fetch(CSV_URL);
-                const csvText = await response.text();
+                statusText.innerText = "Fetching latest inventory data...";
+                const response = await fetch(SHEET_URL);
+                const data = await response.text();
                 
-                Papa.parse(csvText, {
-                    header: true,
-                    worker: true, // ใช้ Worker เพื่อไม่ให้ UI ค้าง
-                    complete: (results) => {
-                        allItems = results.data
-                            .filter(row => row['ชื่อการค้า']) // ตัดแถวว่าง
-                            .map((item, idx) => ({
-                                id: idx,
-                                code: item['รหัสสินค้า'] || '',
-                                name: item['ชื่อการค้า'],
-                                unit: item['หน่วย'] || 'ชิ้น',
-                                barcode: item['บาร์โค้ด'] || '',
-                                price: parseFloat(String(item['ราคา']).replace(/,/g, '')) || 0,
-                                cost: parseFloat(String(item['ต้นทุน']).replace(/,/g, '')) || 0
-                            }));
-                        
-                        filteredItems = [...allItems];
-                        resetView();
-                        syncIcon.classList.remove('fa-spin');
-                    }
-                });
+                inventory = parseCSV(data);
+                renderInventory(inventory);
+                updateStats();
+                
+                setTimeout(() => {
+                    loading.style.display = 'none';
+                    statusText.innerText = `Connected. Last sync: ${new Date().toLocaleTimeString()}`;
+                }, 800);
             } catch (error) {
-                console.error(error);
-                alert("โหลดข้อมูลไม่สำเร็จ!");
+                console.error('Fetch error:', error);
+                statusText.innerText = "Error syncing data.";
+                alert("Could not load data. Check console for details.");
             }
         }
 
-        // 2. High Speed Search (Debounced)
-        function handleSearch(val) {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                const query = val.toLowerCase().trim();
-                if (!query) {
-                    filteredItems = [...allItems];
-                } else {
-                    filteredItems = allItems.filter(item => 
-                        item.name.toLowerCase().includes(query) || 
-                        item.barcode.includes(query) ||
-                        item.code.toLowerCase().includes(query)
-                    );
-                }
-                resetView();
-            }, 300); // รอ 300ms เพื่อให้พิมพ์ลื่น
+        function parseCSV(csvText) {
+            const lines = csvText.split('\n');
+            const headers = lines[0].split(',').map(h => h.trim());
+            const results = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                if (!lines[i]) continue;
+                const currentLine = lines[i].split(',');
+                const obj = {};
+                headers.forEach((header, index) => {
+                    obj[header] = currentLine[index]?.trim();
+                });
+                results.push(obj);
+            }
+            return results;
         }
 
-        // 3. Lazy Loading Logic
-        function resetView() {
-            itemsToShow = 60;
-            document.getElementById('scroll-container').scrollTop = 0;
-            document.getElementById('count-display').innerText = filteredItems.length.toLocaleString();
-            renderGrid();
-        }
+        // --- UI Rendering ---
 
-        function renderGrid() {
-            const container = document.getElementById('product-list');
-            const chunk = filteredItems.slice(0, itemsToShow);
-            
-            container.innerHTML = chunk.map(item => `
-                <div onclick="addToCart(${item.id})" class="glass-panel p-4 rounded-2xl cursor-pointer hover:border-blue-400 hover:shadow-md transition-all group">
-                    <div class="text-[10px] text-slate-400 mb-1">${item.barcode || item.code}</div>
-                    <div class="font-bold text-slate-800 text-sm h-10 line-clamp-2 group-hover:text-blue-600">${item.name}</div>
-                    <div class="mt-3 flex justify-between items-center">
-                        <span class="text-blue-600 font-bold">฿${item.price.toLocaleString()}</span>
-                        <span class="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500">${item.unit}</span>
-                    </div>
-                </div>
+        function renderInventory(items) {
+            const tbody = document.getElementById('inventoryBody');
+            tbody.innerHTML = items.map(item => `
+                <tr class="hover:bg-white/5 transition-colors group">
+                    <td class="p-4 text-slate-400 font-mono text-xs">${item.รหัสสินค้า}</td>
+                    <td class="p-4">
+                        <div class="font-semibold text-slate-200">${item.ชื่อการค้า}</div>
+                        <div class="text-[10px] text-slate-500">${item.บาร์โค้ด}</div>
+                    </td>
+                    <td class="p-4 text-center text-xs text-slate-400">${item.หน่วย}</td>
+                    <td class="p-4 text-right font-bold text-blue-300">฿${parseFloat(item.ราคา).toLocaleString()}</td>
+                    <td class="p-4 text-center">
+                        <button onclick="addToCart('${item.รหัสสินค้า}')" 
+                                class="bg-blue-500/10 hover:bg-blue-500 text-blue-400 hover:text-white p-2 rounded-lg transition">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        </button>
+                    </td>
+                </tr>
             `).join('');
-
-            // ซ่อนตัวโหลดถ้าหมดแล้ว
-            document.getElementById('load-more-trigger').style.display = 
-                itemsToShow >= filteredItems.length ? 'none' : 'block';
         }
 
-        function checkScroll(el) {
-            // ถ้าเลื่อนถึงเกือบด้านล่าง ให้โหลดเพิ่มอีก 40 รายการ
-            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
-                if (itemsToShow < filteredItems.length) {
-                    itemsToShow += 40;
-                    renderGrid();
-                }
-            }
+        function filterTable() {
+            const query = document.getElementById('searchInput').value.toLowerCase();
+            const filtered = inventory.filter(item => 
+                item.ชื่อการค้า.toLowerCase().includes(query) || 
+                item.บาร์โค้ด.includes(query) ||
+                item.รหัสสินค้า.toLowerCase().includes(query)
+            );
+            renderInventory(filtered);
         }
 
-        // 4. Cart Logic (Optimized)
-        function addToCart(id) {
-            const product = allItems.find(i => i.id === id);
-            const existing = cart.find(c => c.id === id);
+        // --- Cart Logic ---
+
+        function addToCart(productId) {
+            const product = inventory.find(p => p.รหัสสินค้า === productId);
+            const existing = cart.find(item => item.รหัสสินค้า === productId);
+
             if (existing) {
                 existing.qty++;
             } else {
@@ -204,43 +254,45 @@
             renderCart();
         }
 
+        function removeFromCart(productId) {
+            cart = cart.filter(item => item.รหัสสินค้า !== productId);
+            renderCart();
+        }
+
         function renderCart() {
-            const container = document.getElementById('cart-items');
+            const cartContainer = document.getElementById('cartItems');
+            const emptyCart = document.getElementById('empty-cart');
+            
             if (cart.length === 0) {
-                container.innerHTML = `<div class="text-center py-20 text-slate-400"><i class="fas fa-shopping-basket text-4xl mb-4 block opacity-20"></i>รถเข็นว่างเปล่า</div>`;
-                updateTotal();
+                cartContainer.innerHTML = '';
+                cartContainer.appendChild(emptyCart);
+                updateCartTotals(0);
                 return;
             }
 
-            container.innerHTML = cart.map(item => `
-                <div class="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                    <div class="flex-1">
-                        <h4 class="font-bold text-slate-800 text-xs truncate w-40">${item.name}</h4>
-                        <div class="text-blue-500 text-xs font-bold">฿${(item.price * item.qty).toLocaleString()}</div>
+            cartContainer.innerHTML = cart.map(item => `
+                <div class="glass-panel bg-white/5 p-4 flex justify-between items-center animate-in fade-in slide-in-from-right-4 duration-300">
+                    <div>
+                        <div class="font-semibold text-sm">${item.ชื่อการค้า}</div>
+                        <div class="text-xs text-slate-500">฿${item.ราคา} x ${item.qty}</div>
                     </div>
-                    <div class="flex items-center bg-slate-50 rounded-lg p-1">
-                        <button onclick="updateQty(${item.id}, -1)" class="w-6 h-6 hover:bg-white rounded">-</button>
-                        <span class="w-8 text-center text-xs font-bold">${item.qty}</span>
-                        <button onclick="updateQty(${item.id}, 1)" class="w-6 h-6 hover:bg-white rounded">+</button>
+                    <div class="flex items-center gap-3">
+                        <span class="font-bold text-blue-400">฿${(item.ราคา * item.qty).toLocaleString()}</span>
+                        <button onclick="removeFromCart('${item.รหัสสินค้า}')" class="text-slate-600 hover:text-red-400">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"></path></svg>
+                        </button>
                     </div>
                 </div>
             `).join('');
-            updateTotal();
+
+            const total = cart.reduce((sum, item) => sum + (item.ราคา * item.qty), 0);
+            updateCartTotals(total);
         }
 
-        function updateQty(id, delta) {
-            const item = cart.find(c => c.id === id);
-            if (item) {
-                item.qty += delta;
-                if (item.qty <= 0) cart = cart.filter(c => c.id !== id);
-                renderCart();
-            }
-        }
-
-        function updateTotal() {
-            const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
-            document.getElementById('total-amount').innerText = `฿${total.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-            document.getElementById('cart-count').innerText = cart.length;
+        function updateCartTotals(total) {
+            document.getElementById('cart-subtotal').innerText = `฿${total.toLocaleString()}`;
+            document.getElementById('cart-total').innerText = `฿${total.toLocaleString()}`;
+            document.getElementById('cart-count').innerText = cart.reduce((s, i) => s + i.qty, 0);
         }
 
         function clearCart() {
@@ -248,23 +300,27 @@
             renderCart();
         }
 
-        function processSale() {
-            if (cart.length === 0) return;
-            alert(`ชำระเงินเรียบร้อย!\nยอดรวม: ${document.getElementById('total-amount').innerText}`);
-            cart = [];
-            renderCart();
+        function checkout() {
+            if (cart.length === 0) return alert("Cart is empty");
+            
+            sessionSalesCount++;
+            document.getElementById('session-sales').innerText = sessionSalesCount;
+            
+            const total = cart.reduce((sum, item) => sum + (item.ราคา * item.qty), 0);
+            alert(`Transaction Successful!\nTotal: ฿${total.toLocaleString()}\nThank you!`);
+            
+            clearCart();
         }
 
-        // Init
+        function updateStats() {
+            document.getElementById('total-items').innerText = inventory.length;
+            const totalVal = inventory.reduce((sum, item) => sum + (parseFloat(item.ต้นทุน || 0)), 0);
+            document.getElementById('total-value').innerText = `฿${totalVal.toLocaleString()}`;
+        }
+
+        // Initialize
         fetchData();
 
-        // Keyboard Shortcut (F10 to pay)
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'F10') {
-                e.preventDefault();
-                processSale();
-            }
-        });
     </script>
 </body>
 </html>
