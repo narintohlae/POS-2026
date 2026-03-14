@@ -3790,53 +3790,45 @@ async exportToExcel() {
         return;
     }
 
-    // 1. เตรียมข้อมูลสำหรับ Export (ตัดคอลัมน์ "หน่วยที่ขาย" และ "จำนวนที่ขาย" ออก)
+    // 1. เตรียมข้อมูลสำหรับ Export 
     const dataToExport = this.state.salesHistory.flatMap(sale =>
         sale.items.map(item => {
             const quantitySold = item.quantity || 0;
             const unitSold = item.unit || 'หน่วย';
             const factor = item.conversionFactor || 1;
             
-            // ค่าพื้นฐานจากการคำนวณปกติ
             let finalTotalSmallUnits = item.totalBaseQuantity || (quantitySold * factor);
             
-            // --- [🌟 จุดที่แก้ไข: ดึงข้อมูลสินค้าจากฐานข้อมูลมาช่วยประมวลผล] ---
-            // ค้นหาสินค้าจาก id หรือ productCode (เผื่อโครงสร้างบิลเก็บค่าไว้ต่างกัน)
             const productSetup = this.state.productsFromFirestore?.find(p => 
                 p.id === item.productId || 
                 p.productCode === item.productId || 
                 p.productCode === item.id
             );
 
-            // 🌟 แก้บั๊ก: ถ้าในบิลไม่มี baseUnit ให้ไปดึงจากฐานข้อมูลสินค้ามาใส่แทน ถ้าไม่มีอีกให้ใช้หน่วยที่ขาย
             let finalBaseUnit = item.baseUnit || (productSetup ? productSetup.baseUnit : null) || unitSold;
 
             const specialUnitObj = productSetup?.pricingUnits?.find(u => u.parentUnit);
 
             if (specialUnitObj) {
-                // เงื่อนไขหน่วยพิเศษ: ใช้ตัวคูณมาตรฐาน
                 const multiplier = Math.round(1 / specialUnitObj.conversionFactor);
                 finalTotalSmallUnits = quantitySold * multiplier;    
                 finalBaseUnit = specialUnitObj.unitName; 
             } 
             else if (finalTotalSmallUnits % 1 !== 0) {
-                // เงื่อนไขทศนิยม: สลับไปใช้จำนวนที่ขายจริง
                 finalTotalSmallUnits = quantitySold;
                 finalBaseUnit = unitSold;
             }
-            // ------------------------------------------
 
             const totalItemValue = (item.price * quantitySold);
             const totalItemCost = (item.cost * quantitySold);
 
-            // คืนค่าเฉพาะคอลัมน์ที่ต้องการโชว์
             return {
                 'รหัสการขาย': sale.id,
                 'วันที่': new Date(sale.timestamp).toLocaleDateString('th-TH'),
                 'เวลา': new Date(sale.timestamp).toLocaleTimeString('th-TH'),
                 'ชื่อสินค้า': item.name || item.productName,
                 'จำนวนหน่วยย่อยรวม': finalTotalSmallUnits,
-                'หน่วยย่อย (Base)': finalBaseUnit, // <--- ตอนนี้จะมีข้อมูลมาลงเป๊ะๆ แล้วครับ
+                'หน่วยย่อย (Base)': finalBaseUnit, 
                 'ราคา/หน่วยขาย': parseFloat(item.price.toFixed(2)),
                 'ต้นทุน/หน่วยขาย': parseFloat(item.cost.toFixed(2)),
                 'ยอดรวมขาย': parseFloat(totalItemValue.toFixed(2)),
@@ -3851,27 +3843,35 @@ async exportToExcel() {
     try {
         const worksheet = XLSX.utils.json_to_sheet(dataToExport);
 
-        // 2. --- [คำนวณความกว้างคอลัมน์แบบ Custom] ---
+        // 2. --- [🌟 แก้ไขใหม่: คำนวณความกว้างคอลัมน์อัตโนมัติ (Auto-Fit ทุกคอลัมน์)] ---
         const calcWidth = (text) => {
-            if (!text) return 0;
-            return text.toString().length + (text.toString().match(/[ก-๙]/g) || []).length * 0.7;
+            if (text === null || text === undefined) return 10;
+            const str = text.toString();
+            // ตัวอักษรไทยอาจจะใช้พื้นที่ต่างจากภาษาอังกฤษ เลยเผื่อพื้นที่สระไว้ด้วย
+            const thaiChars = (str.match(/[ก-๙]/g) || []).length;
+            return str.length + (thaiChars * 0.5); 
         };
 
         const headers = Object.keys(dataToExport[0]);
         const colWidths = headers.map((key) => {
-            if (key === 'ชื่อสินค้า') {
-                let maxWidth = calcWidth(key);
-                dataToExport.forEach(row => {
-                    const cellWidth = calcWidth(row[key]);
-                    if (cellWidth > maxWidth) maxWidth = cellWidth;
-                });
-                return { wch: maxWidth + 2 };
-            } else {
-                return { wch: calcWidth(key) + 2 };
-            }
+            // 2.1 เริ่มต้นตั้งค่าความกว้างตาม "ชื่อหัวคอลัมน์" ก่อน
+            let maxWidth = calcWidth(key);
+            
+            // 2.2 วนเช็คข้อมูลทุกบรรทัดในคอลัมน์นี้ ว่ามีเซลล์ไหนยาวกว่าหัวคอลัมน์ไหม
+            dataToExport.forEach(row => {
+                const cellWidth = calcWidth(row[key]);
+                if (cellWidth > maxWidth) {
+                    maxWidth = cellWidth;
+                }
+            });
+            
+            // 2.3 บวกพื้นที่ว่างซ้ายขวา (Padding) ไปอีก 3 ตัวอักษร ให้ดูไม่อึดอัด
+            // และตั้ง Limit สูงสุดไว้ที่ 60 ป้องกันคอลัมน์กว้างเกินหน้าจอ
+            return { wch: Math.min(Math.round(maxWidth + 3), 60) }; 
         });
 
         worksheet['!cols'] = colWidths;
+        // -------------------------------------------------------------
 
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Sales_Report');
@@ -3879,7 +3879,7 @@ async exportToExcel() {
         const fileName = `Sales_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
         XLSX.writeFile(workbook, fileName);
         
-        console.log(`🎉 Export สำเร็จ: ตัดคอลัมน์ที่ไม่จำเป็นออกแล้ว`);
+        console.log(`🎉 Export สำเร็จ: ปรับความกว้างคอลัมน์อัตโนมัติเรียบร้อย`);
 
     } catch (e) {
         console.error("Export Excel Error:", e);
