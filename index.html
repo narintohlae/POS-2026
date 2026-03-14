@@ -3127,7 +3127,7 @@ async confirmSale() {
             document.getElementById('confirm-sale-btn').disabled = false;
             this.focusSearchIfReady(); // โฟกัสกลับไปที่ช่องค้นหา เพื่อให้พร้อมยิงบาร์โค้ดบิลใหม่ทันที
         }
-    }
+    },
 
     printSaleRecordFromHistory(firestoreId) {
         const saleToPrint = this.state.salesHistory.find(s => s.firestoreId === firestoreId);
