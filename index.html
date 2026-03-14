@@ -2176,7 +2176,7 @@ async importFromGoogleSheet(isAutomatic = false) {
         console.error(e);
         if (!isAutomatic) this.showInfoModal("ผิดพลาด", "ไม่สามารถดึงข้อมูลได้: " + e.message, true);
     }
-}
+},
     getSalesHistoryCollectionRef() { const { appId, db, api } = window.firebaseServices;
     return api.collection(db, `artifacts/${appId}/public/data/salesHistory`); },
     getProductsCollectionRef() { const { appId, db, api } = window.firebaseServices; return api.collection(db, `artifacts/${appId}/public/data/products`);
