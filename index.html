@@ -1466,13 +1466,13 @@ h2 .auth-status-badge.offline .dot { background: #999; }
     } else {
         console.warn("Firebase config not found in environment. Using local fallback. PLEASE REPLACE PLACEHOLDER VALUES.");
         firebaseConfig = {
-  apiKey: "AIzaSyA-5dshwhwNgsnkDQRqD-cAp0g6fMPU1OQ",
-  authDomain: "pos-17.firebaseapp.com",
-  projectId: "pos-17",
-  storageBucket: "pos-17.firebasestorage.app",
-  messagingSenderId: "820920054974",
-  appId: "1:820920054974:web:23517581f05c2574941aef",
-  measurementId: "G-7EMX2S2EHY"
+  apiKey: "AIzaSyCuGPktXLPSPWFaUXBMhcB9zq9MK8zZg28",
+  authDomain: "pos-16-66a50.firebaseapp.com",
+  projectId: "pos-16-66a50",
+  storageBucket: "pos-16-66a50.firebasestorage.app",
+  messagingSenderId: "889982404405",
+  appId: "1:889982404405:web:75d944b0ccd49706eeee7c",
+  measurementId: "G-ZCKV5CGBT9"
 };
     }
 
@@ -2022,37 +2022,18 @@ async importFromGoogleSheet(isAutomatic = false) {
         };
 
         // ---------------------------------------------------------
-        // 2. Helper: ดึงข้อมูลโปรโมชั่น "ระดับที่ 1, 2, 3" (🌟 อัปเดตใหม่ 🌟)
-        // แก้ปัญหา Google Sheets แปลงค่า "3/20" เป็นรูปแบบวันที่
+        // 2. Helper: ดึงข้อมูลโปรโมชั่น "ระดับที่ 1, 2, 3"
+        // สมมติว่าในชีตคุณพิมพ์รูปแบบ จำนวน:ราคา เช่น "3:100" หรือ "3=100"
         // ---------------------------------------------------------
         const parseTier = (val) => {
             if (!val) return null;
-            let strVal = String(val).trim();
-
-            // กรณีที่ 1: Google Sheets ส่งมาเป็น ISO Date (เช่น "2024-03-20T17:00:00.000Z")
-            const dateMatch = strVal.match(/^\d{4}-(\d{2})-(\d{2})/);
-            if (dateMatch) {
-                const num1 = parseInt(dateMatch[1], 10);
-                const num2 = parseInt(dateMatch[2], 10);
-                
-                // ใช้เทคนิค: จำนวนชิ้น (Qty) มักจะน้อยกว่า ราคา (Price) เสมอ
-                const qty = Math.min(num1, num2);
-                const price = Math.max(num1, num2);
-                
-                if (qty > 0 && price > 0) return { quantity: qty, price: price };
-            }
-
-            // กรณีที่ 2: App Script ส่งมาเป็นข้อความที่มี ปี ค.ศ. ต่อท้าย (เช่น "3/20/2024")
-            strVal = strVal.replace(/\/\d{4}(?:\s.*)?$/, ''); 
-
-            // กรณีที่ 3: แบบข้อความปกติ รองรับเครื่องหมายแบ่งโควตาหลายแบบ เช่น :, =, /, |
-            const parts = strVal.split(/[:=\/|]/);
+            // รองรับเครื่องหมายแบ่งโควตาหลายแบบ เช่น :, =, /, |
+            const parts = String(val).split(/[:=/|]/); 
             if (parts.length >= 2) {
                 const qty = parseNumberValue(parts[0]);
                 const price = parseNumberValue(parts[1]);
                 if (qty > 0 && price > 0) return { quantity: qty, price: price };
             }
-
             return null;
         };
 
