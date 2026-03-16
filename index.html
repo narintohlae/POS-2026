@@ -3412,7 +3412,9 @@ async confirmSale() {
         const newCart = [];
         const missingItems = [];
         for (const item of saleToEdit.items) {
-            const fullProductUnit = this.state.searchableProductUnits.find(p => p.cartItemId === item.cartItemId);
+            const fullProductUnit = this.state.searchableProductUnits.find(p => 
+                p.productId === item.productId && p.pricingUnit.unitName === item.unit
+            );
             if (fullProductUnit) {
                 const cartItem = { cartItemId: item.cartItemId, productUnit: fullProductUnit, quantity: item.quantity };
                 const originalPrice = this.calculateItemTotal(fullProductUnit.pricingUnit, item.quantity) / item.quantity;
