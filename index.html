@@ -2075,34 +2075,31 @@ async importFromGoogleSheet(isAutomatic = false) {
         };
 
         // ---------------------------------------------------------
-        // 🌟 4. NEW Helper: จับคู่ ราคา และ ต้นทุน ให้ตรงกันเป๊ะตามที่คุณต้องการ
+        // 🌟 4. NEW Helper: บังคับใช้ ราคา 1 เป็นราคาเริ่มต้นเสมอ
         // ---------------------------------------------------------
-        const getPriceAndCost = (unitName, row, factor) => {
-            const currentUnit = String(unitName).trim().toLowerCase();
-            const unit1 = String(row['หน่วย 1']).trim().toLowerCase();
-            const unit2 = String(row['หน่วย 2']).trim().toLowerCase();
-
+        const getPriceAndCost = (unitName, row, factor, unitLevel) => {
             let price = 0;
-            let cost = 0;
+            // ดึงต้นทุนตามปกติ
+            let cost = getCostForSpecificUnit(unitName, row);
 
-            // 🎯 กฎข้อที่ 1: ถ้าตรงกับ "หน่วย 1" ให้ใช้ "ราคา 1" และวิ่งหาต้นทุนของ "หน่วย 1"
-            if (currentUnit === unit1 && unit1 !== '') {
-                price = parseNumberValue(row['ราคา 1']);
-                cost = getCostForSpecificUnit(row['หน่วย 1'], row);
-                return { price, cost };
-            }
-
-            // 🎯 กฎข้อที่ 2: ถ้าตรงกับ "หน่วย 2" ให้ใช้ "ราคา 2" และวิ่งหาต้นทุนของ "หน่วย 2"
-            if (currentUnit === unit2 && unit2 !== '') {
-                price = parseNumberValue(row['ราคา 2']);
-                cost = getCostForSpecificUnit(row['หน่วย 2'], row);
-                return { price, cost };
-            }
-
-            // 🎯 แผนสำรอง: กรณีไม่ได้กำหนดไว้ใน หน่วย 1 หรือ 2
-            cost = getCostForSpecificUnit(unitName, row);
+            // ดึงราคา 1 (ราคาตั้งต้นเสมอ)
             const basePrice = parseNumberValue(row['ราคา 1']);
-            if (factor > 1 && basePrice > 0) price = basePrice * factor;
+
+            // กำหนดราคาตามระดับหน่วย
+            if (unitLevel === 1) {
+                // หน่วยที่ 1 บังคับใช้ "ราคา 1" เสมอ
+                price = basePrice;
+            } else if (unitLevel === 2) {
+                // หน่วยที่ 2 ถ้ามี "ราคา 2" ให้ใช้ ราคา 2, ถ้าไม่มีเอา (ราคา 1 * ตัวคูณ)
+                const price2 = parseNumberValue(row['ราคา 2']);
+                price = price2 > 0 ? price2 : (basePrice * factor);
+            } else if (unitLevel === 3) {
+                // หน่วยที่ 3 ถ้ามี "ราคา 3" ให้ใช้ ราคา 3, ถ้าไม่มีเอา (ราคา 1 * ตัวคูณ)
+                const price3 = parseNumberValue(row['ราคา 3']);
+                price = price3 > 0 ? price3 : (basePrice * factor);
+            } else {
+                price = basePrice * factor;
+            }
 
             return { price, cost };
         };
@@ -2128,8 +2125,8 @@ async importFromGoogleSheet(isAutomatic = false) {
             if (row['หน่วยนับที่ 1']) {
                 const unitName = String(row['หน่วยนับที่ 1']).trim();
                 
-                // 🎯 เรียกใช้ฟังก์ชันดึงราคาและต้นทุน
-                const { price, cost } = getPriceAndCost(unitName, row, 1);
+                // 🎯 เรียกใช้ฟังก์ชันดึงราคาและต้นทุน (ส่ง unitLevel = 1)
+                const { price, cost } = getPriceAndCost(unitName, row, 1, 1);
                 baseCost = cost;
                 
                 let unitTiers = [...tiers];
@@ -2153,8 +2150,8 @@ async importFromGoogleSheet(isAutomatic = false) {
                 const unitName = String(row['หน่วยนับที่ 2']).trim();
                 const factor = parseNumberValue(row['ค่าการแปลงหน่วยที่ 2']) || 1;
                 
-                // 🎯 เรียกใช้ฟังก์ชันดึงราคาและต้นทุน
-                let { price, cost } = getPriceAndCost(unitName, row, factor);
+                // 🎯 เรียกใช้ฟังก์ชันดึงราคาและต้นทุน (ส่ง unitLevel = 2)
+                let { price, cost } = getPriceAndCost(unitName, row, factor, 2);
                 
                 if (cost === 0 && baseCost > 0) cost = baseCost * factor; // แผนฉุกเฉินถ้าลืมกรอกต้นทุนหน่วยใหญ่
 
@@ -2173,8 +2170,8 @@ async importFromGoogleSheet(isAutomatic = false) {
                 const unitName = String(row['หน่วยนับที่ 3']).trim();
                 const factor = parseNumberValue(row['ค่าการแปลงหน่วยที่ 3']) || 1;
                 
-                // 🎯 เรียกใช้ฟังก์ชันดึงราคาและต้นทุน
-                let { price, cost } = getPriceAndCost(unitName, row, factor);
+                // 🎯 เรียกใช้ฟังก์ชันดึงราคาและต้นทุน (ส่ง unitLevel = 3)
+                let { price, cost } = getPriceAndCost(unitName, row, factor, 3);
                 
                 if (cost === 0 && baseCost > 0) cost = baseCost * factor; // แผนฉุกเฉินถ้าลืมกรอกต้นทุนหน่วยใหญ่
 
