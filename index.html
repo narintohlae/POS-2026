@@ -3851,7 +3851,8 @@ async exportToExcel() {
             const totalItemValue = (item.price * quantitySold);
             const totalItemCost = (item.cost * quantitySold);
 
-            return {
+            // สร้าง Object ข้อมูลเตรียมไว้ก่อน
+            const rowData = {
                 'รหัสการขาย': sale.id,
                 'วันที่': new Date(sale.timestamp).toLocaleDateString('th-TH'),
                 'เวลา': new Date(sale.timestamp).toLocaleTimeString('th-TH'),
@@ -3866,6 +3867,15 @@ async exportToExcel() {
                 'ส่วนลดท้ายบิล': parseFloat(sale.discount.toFixed(2)),
                 'ยอดสุทธิทั้งบิล': parseFloat(sale.total.toFixed(2))
             };
+
+            // 🛑 เช็คโหมด: ถ้าเป็นพนักงาน (isRestrictedMode = true) ให้ลบคอลัมน์ความลับทิ้ง
+            if (this.state.isRestrictedMode) {
+                delete rowData['ต้นทุน/หน่วยขาย'];
+                delete rowData['ยอดรวมต้นทุน'];
+                delete rowData['กำไรส่วนต่าง'];
+            }
+
+            return rowData;
         })
     );
 
