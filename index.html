@@ -4245,10 +4245,19 @@ app.renderStockInList = function() {
             this.renderStockInList();
         };
 
-        // 6. ฟังก์ชันยืนยันการบันทึก (อัปเดตสต็อกลง Firestore)
-        app.confirmStockIn = async function() {
+// 1. ฟังก์ชันสำหรับ "แสดง" หน้าต่างถามยืนยัน
+        app.confirmStockIn = function() {
             if (this.state.stockInItems.length === 0) return;
-            if (!confirm(`ยืนยันการรับเข้าสินค้าจำนวน ${this.state.stockInItems.length} รายการ?`)) return;
+            
+            // เปลี่ยนข้อความและแสดง Modal
+            document.getElementById('stock-in-confirm-text').textContent = `ยืนยันการรับเข้าสินค้าจำนวน ${this.state.stockInItems.length} รายการ?`;
+            document.getElementById('stock-in-confirm-modal').style.display = 'flex';
+        };
+
+        // 2. ฟังก์ชันสำหรับ "บันทึกข้อมูลจริง" (ทำงานเมื่อกดยืนยันใน Modal)
+        app.executeStockIn = async function() {
+            // ปิด Modal ยืนยันก่อน
+            document.getElementById('stock-in-confirm-modal').style.display = 'none';
 
             const btn = document.getElementById('confirm-stock-in-btn');
             btn.disabled = true;
@@ -4259,7 +4268,6 @@ app.renderStockInList = function() {
                 const productsCollectionRef = this.getProductsCollectionRef();
                 const batch = api.writeBatch(db);
 
-                // รวมยอด (กรณีมีการรับเข้าสินค้าตัวเดียวกันแต่ต่างหน่วย)
                 const stockUpdates = {}; 
                 
                 this.state.stockInItems.forEach(item => {
@@ -4271,7 +4279,6 @@ app.renderStockInList = function() {
                     stockUpdates[productId] += baseQtyToAdd;
                 });
 
-                // สร้างคำสั่ง Batch Update
                 for (const [productId, addQty] of Object.entries(stockUpdates)) {
                     const productRef = api.doc(productsCollectionRef, productId);
                     batch.update(productRef, { 
@@ -4283,7 +4290,7 @@ app.renderStockInList = function() {
                 await batch.commit();
 
                 this.showInfoModal("สำเร็จ", "อัปเดตสต็อกสินค้าเรียบร้อยแล้ว");
-                this.hideStockInModal();
+                this.hideStockInModal(); // ปิดหน้าต่างรับเข้าใหญ่
 
             } catch (error) {
                 console.error("Stock In Error:", error);
@@ -4299,6 +4306,11 @@ app.renderStockInList = function() {
         document.getElementById('cancel-stock-in-btn')?.addEventListener('click', () => app.hideStockInModal());
         document.getElementById('clear-stock-in-btn')?.addEventListener('click', () => { app.state.stockInItems = []; app.renderStockInList(); });
         document.getElementById('confirm-stock-in-btn')?.addEventListener('click', () => app.confirmStockIn());
+        // ปุ่มใน Modal ยืนยันรับเข้าสต็อก
+        document.getElementById('cancel-stock-in-confirm-btn')?.addEventListener('click', () => {
+            document.getElementById('stock-in-confirm-modal').style.display = 'none';
+        });
+        document.getElementById('execute-stock-in-btn')?.addEventListener('click', () => app.executeStockIn());
         
         const searchInput = document.getElementById('stock-in-search-input');
         searchInput?.addEventListener('input', (e) => app.handleStockInSearch(e));
@@ -4649,6 +4661,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button type="button" id="cancel-stock-in-btn" style="background-color: var(--secondary-color);">ยกเลิก</button>
                     <button type="button" id="confirm-stock-in-btn" class="finish-sale">บันทึกรับเข้าสต็อก</button>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+    <div id="stock-in-confirm-modal" class="modal-overlay" style="display:none; z-index: 1060;">
+    <div class="modal-content" style="max-width: 400px;">
+        <div class="modal-header">
+            <h3 style="color:var(--primary-color)">ยืนยันการรับเข้าสต็อก</h3>
+        </div>
+        <div class="modal-body">
+            <p id="stock-in-confirm-text" style="text-align: center; font-size: 1.1em; margin: 1rem 0;"></p>
+        </div>
+        <div class="modal-footer">
+            <div class="button-group" style="width: 100%; justify-content: center;">
+                <button type="button" id="cancel-stock-in-confirm-btn" style="background-color:var(--secondary-color)">ยกเลิก</button>
+                <button type="button" id="execute-stock-in-btn" class="finish-sale">ยืนยัน</button>
             </div>
         </div>
     </div>
