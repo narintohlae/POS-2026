@@ -1301,14 +1301,16 @@ h2 .auth-status-badge.offline .dot { background: #999; }
 }
 </style>
 <style id="show-qty-spinner">
-/* นำลูกศรขึ้น-ลง กลับมาแสดงเฉพาะในช่องจำนวนสินค้า */
+/* นำลูกศรขึ้น-ลง กลับมาแสดงเฉพาะในช่องจำนวนสินค้าให้เห็นตลอดเวลา */
 .col-qty .item-input {
-    -moz-appearance: auto !important;
+    -moz-appearance: auto !important; /* บังคับให้แสดงใน Firefox */
     width: 65px !important; 
 }
 .col-qty .item-input::-webkit-outer-spin-button, 
 .col-qty .item-input::-webkit-inner-spin-button {
-    -webkit-appearance: auto !important;
+    -webkit-appearance: inner-spin-button !important; 
+    opacity: 1 !important; /* คำสั่งหลัก: บังคับให้แสดงตลอดเวลาใน Chrome/Edge/Safari */
+    display: block !important;
     margin: 0;
     cursor: pointer;
 }
