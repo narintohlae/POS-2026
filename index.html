@@ -3274,7 +3274,8 @@ async confirmSale() {
                     conversionFactor: fac,
                     price: pricePerUnit,         // ราคาต่อหน่วยที่ผ่านการคำนวณส่วนลดโปรโมชั่นมาแล้ว
                     totalPrice: totalItemPrice,  // ราคารวมของรายการนี้
-                    cost: cost
+                    cost: cost,
+                    baseUnit: item.productUnit.baseUnit || ""
                 };
             });
 
