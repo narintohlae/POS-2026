@@ -2050,7 +2050,7 @@ const response = await fetch(this.config.googleSheetUrl + '?t=' + new Date().get
 
 async importFromGoogleSheet(isAutomatic = false) {
     if (!isAutomatic) {
-        this.showInfoModal("กำลังนำเข้า...", "ระบบกำลังดึงข้อมูลจาก Google Sheets (ยึด ราคา 1 และ หน่วย 1 เป็นหลัก)...");
+        this.showInfoModal("กำลังนำเข้า...", "ระบบกำลังดึงข้อมูล ราคาหลัก และ ระดับราคา (โปรโมชั่น)...");
     }
 
     try {
@@ -2079,18 +2079,56 @@ async importFromGoogleSheet(isAutomatic = false) {
             return parseFloat(cleanVal) || 0;
         };
 
-        // 🛠️ Helper ค้นหาหัวคอลัมน์ (รองรับการเขียน "หน่วยนับที่ 1" หรือ "หน่วย 1")
-        const getVal = (row, colName, altColName = '') => {
-            const target1 = String(colName).replace(/\s+/g, '').toLowerCase();
-            const target2 = altColName ? String(altColName).replace(/\s+/g, '').toLowerCase() : '';
-            
-            for (let key in row) {
-                const cleanKey = String(key).replace(/\s+/g, '').toLowerCase();
-                if (cleanKey === target1 || (target2 && cleanKey === target2)) {
-                    return row[key];
+        // 🛠️ Helper ค้นหาหัวคอลัมน์แบบยืดหยุ่น
+        const getVal = (row, ...colNames) => {
+            for (let colName of colNames) {
+                const target = String(colName).replace(/\s+/g, '').toLowerCase();
+                for (let key in row) {
+                    const cleanKey = String(key).replace(/\s+/g, '').toLowerCase();
+                    if (cleanKey === target) {
+                        if (row[key] !== undefined && row[key] !== '') return row[key];
+                    }
                 }
             }
             return undefined;
+        };
+
+        // 🎯 [NEW] ฟังก์ชันสกัดระดับราคา (รองรับ 1/490, 3/1440) 
+        // พิมพ์แยกคอลัมน์ก็ได้ หรือพิมพ์รวมในคอลัมน์เดียวเว้นวรรคก็ได้
+        const parseTiers = (val) => {
+            if (!val) return [];
+            let strVal = String(val).trim();
+            
+            // ดักจับกรณี Google Sheets แอบแปลง "1/4" เป็นวันที่ (เช่น 1 เมษายน)
+            if (strVal.match(/^\d{4}-\d{2}-\d{2}T/)) {
+                const d = new Date(strVal);
+                if (!isNaN(d.getTime())) {
+                    const num1 = d.getMonth() + 1; 
+                    const num2 = d.getDate();      
+                    const qty = Math.min(num1, num2);
+                    const price = Math.max(num1, num2);
+                    if (qty > 0 && price > 0) return [{ quantity: qty, price: price }];
+                }
+            }
+
+            const results = [];
+            // แยกข้อมูลด้วยการเว้นวรรค (space) หรือลูกน้ำ เผื่อพิมพ์หลายระดับในช่องเดียว
+            const parts = strVal.split(/[\s,]+/);
+            
+            parts.forEach(p => {
+                // แยกจำนวนและราคา ด้วยเครื่องหมาย / หรือ : หรือ =
+                const subParts = p.split(/[:=\/|]/);
+                if (subParts.length >= 2) {
+                    // .replace ป้องกันเผื่อติดตัวหนังสือมา เช่น "3ชิ้น/1440บาท"
+                    const qty = parseInt(subParts[0].replace(/[^\d]/g, ''), 10);
+                    const price = parseFloat(subParts[1].replace(/[^\d.]/g, ''));
+                    
+                    if (!isNaN(qty) && qty > 0 && !isNaN(price) && price > 0) {
+                        results.push({ quantity: qty, price: price });
+                    }
+                }
+            });
+            return results;
         };
 
         // =========================================================
@@ -2103,32 +2141,56 @@ async importFromGoogleSheet(isAutomatic = false) {
             
             if (!finalCode || finalCode === 'ไม่มีชื่อ') continue;
 
+            // 🎯 1. ดึงราคาขายหลัก
+            let basePrice = parseNumberValue(getVal(row, 'ราคา 1', 'ราคาขาย'));
+
+            // 🎯 2. ประมวลผล "ระดับราคา" ทั้งหมด
+            let allTiers = [];
+            
+            // อ่านค่าจากคอลัมน์ 'ระดับที่ 1', 'ระดับที่ 2', 'ระดับที่ 3'
+            ['ระดับที่ 1', 'ระดับที่ 2', 'ระดับที่ 3'].forEach(colName => {
+                const tierData = parseTiers(getVal(row, colName));
+                allTiers = allTiers.concat(tierData);
+            });
+
+            // ตรวจสอบว่าในโปรโมชั่น มีราคาสำหรับซื้อ 1 ชิ้นหรือยัง?
+            // ถ้ายังไม่มี ให้เอาราคาขายหลัก (ราคา 1) ใส่เข้าไปเป็นฐาน
+            if (!allTiers.find(t => t.quantity === 1)) {
+                if (basePrice > 0) {
+                    allTiers.push({ quantity: 1, price: basePrice });
+                }
+            } else {
+                // ถ้าระบุ 1/490 ในระดับราคาแล้ว ให้ปรับ basePrice ตามนั้นเลย
+                const tier1 = allTiers.find(t => t.quantity === 1);
+                basePrice = tier1.price;
+            }
+
+            // เรียงลำดับระดับราคา จากซื้อจำนวนมากไปจำนวนน้อย เพื่อให้ POS คำนวณถูก
+            allTiers.sort((a, b) => b.quantity - a.quantity);
+
+            // ถ้าไม่มีราคาสักระดับเลย ข้ามสินค้านี้ไป
+            if (allTiers.length === 0) continue;
+
             const pricingUnits = [];
             
-            // 🎯 1. บังคับให้ "ราคา 1" เป็นราคาขายหลัก (Base Price) เสมอ
-            const basePrice = parseNumberValue(getVal(row, 'ราคา 1', 'ราคาขาย'));
-
-            // 🎯 2. บังคับให้ "หน่วยนับที่ 1" หรือ "หน่วย 1" เป็นหน่วยหลัก
+            // 🎯 3. จัดการหน่วยที่ 1
             const unit1 = getVal(row, 'หน่วยนับที่ 1', 'หน่วย 1') || 'ชิ้น';
             const barcode1 = getVal(row, 'บาร์โค้ดในหน่วยนับ 1', 'บาร์โค้ด1') || finalCode;
 
-            // บันทึกหน่วยที่ 1
             pricingUnits.push({
                 unitName: String(unit1).trim(),
                 barcode: String(barcode1).trim(),
                 cost: 0, 
                 conversionFactor: 1,
-                defaultPrice: basePrice, // ล็อกราคาตามคอลัมน์ O
-                priceTiers: [{ quantity: 1, price: basePrice }] // ล็อกระดับราคา ไม่ต้องไปดึงคอลัมน์โปรโมชั่นมาตีกัน
+                defaultPrice: basePrice,
+                priceTiers: allTiers // ยัดระดับราคาทั้งหมด (เช่น 8/3745, 3/1440, 1/490) ใส่ลงในหน่วยนี้
             });
 
-            // 🎯 3. จัดการหน่วยที่ 2 (ถ้ามี)
+            // (ส่วนของหน่วยที่ 2 คงไว้ให้เผื่อใช้งาน แต่ไม่มีระดับราคาซ้อน)
             const unit2 = getVal(row, 'หน่วยนับที่ 2', 'หน่วย 2');
             if (unit2) {
                 const factor2 = parseNumberValue(getVal(row, 'ค่าการแปลงหน่วยที่ 2', 'ตัวคูณ2')) || 1;
                 const explicitPrice2 = parseNumberValue(getVal(row, 'ราคา 2'));
-                
-                // ถ้าระบุราคา 2 ให้ใช้ราคา 2 ถ้าว่างไว้ถึงจะเอา ราคา 1 ไปคูณ
                 const price2 = explicitPrice2 > 0 ? explicitPrice2 : (basePrice * factor2);
 
                 pricingUnits.push({
@@ -2162,7 +2224,7 @@ async importFromGoogleSheet(isAutomatic = false) {
             }
         }
 
-        // เขียนลง Firebase แบบ Batch (ลดอาการค้าง)
+        // เขียนลง Firebase แบบ Batch
         const CHUNK_SIZE = 400;
         for (let i = 0; i < operations.length; i += CHUNK_SIZE) {
             const chunk = operations.slice(i, i + CHUNK_SIZE);
@@ -2177,7 +2239,7 @@ async importFromGoogleSheet(isAutomatic = false) {
         if (!isAutomatic) {
             document.getElementById('info-modal').style.display = 'none';
             this.setActiveOverlay(null);
-            setTimeout(() => alert("ซิงค์ข้อมูลสำเร็จ! ดึง 'ราคา 1' และ 'หน่วย 1' ได้ถูกต้องแล้ว 🎉"), 100);
+            setTimeout(() => alert("ซิงค์ข้อมูลสำเร็จ! ระบบรับรู้ระดับราคา (ขายส่ง) แล้ว 🎉"), 100);
         }
     } catch (e) {
         console.error(e);
