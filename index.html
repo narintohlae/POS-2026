@@ -2050,7 +2050,7 @@ const response = await fetch(this.config.googleSheetUrl + '?t=' + new Date().get
 
 async importFromGoogleSheet(isAutomatic = false) {
     if (!isAutomatic) {
-        this.showInfoModal("กำลังนำเข้า...", "ระบบกำลังดึงข้อมูล ราคาหลัก และ ระดับราคา (โปรโมชั่น)...");
+        this.showInfoModal("กำลังนำเข้า...", "ระบบกำลังดึงข้อมูล สินค้า, หน่วยย่อย, หน่วยใหญ่ และโปรโมชั่น...");
     }
 
     try {
@@ -2079,50 +2079,29 @@ async importFromGoogleSheet(isAutomatic = false) {
             return parseFloat(cleanVal) || 0;
         };
 
-        // 🛠️ Helper ค้นหาหัวคอลัมน์แบบยืดหยุ่น
-        const getVal = (row, ...colNames) => {
-            for (let colName of colNames) {
-                const target = String(colName).replace(/\s+/g, '').toLowerCase();
-                for (let key in row) {
-                    const cleanKey = String(key).replace(/\s+/g, '').toLowerCase();
-                    if (cleanKey === target) {
-                        if (row[key] !== undefined && row[key] !== '') return row[key];
-                    }
+        // 🛠️ Helper ค้นหาหัวคอลัมน์แบบเป๊ะๆ (ลบช่องว่างก่อนเทียบ)
+        const getVal = (row, exactName) => {
+            const target = String(exactName).replace(/\s+/g, '').toLowerCase();
+            for (let key in row) {
+                if (String(key).replace(/\s+/g, '').toLowerCase() === target) {
+                    return row[key] !== undefined && row[key] !== '' ? row[key] : undefined;
                 }
             }
             return undefined;
         };
 
-        // 🎯 [NEW] ฟังก์ชันสกัดระดับราคา (รองรับ 1/490, 3/1440) 
-        // พิมพ์แยกคอลัมน์ก็ได้ หรือพิมพ์รวมในคอลัมน์เดียวเว้นวรรคก็ได้
+        // 🎯 ฟังก์ชันสกัดระดับราคา (Tier Parser)
         const parseTiers = (val) => {
             if (!val) return [];
             let strVal = String(val).trim();
-            
-            // ดักจับกรณี Google Sheets แอบแปลง "1/4" เป็นวันที่ (เช่น 1 เมษายน)
-            if (strVal.match(/^\d{4}-\d{2}-\d{2}T/)) {
-                const d = new Date(strVal);
-                if (!isNaN(d.getTime())) {
-                    const num1 = d.getMonth() + 1; 
-                    const num2 = d.getDate();      
-                    const qty = Math.min(num1, num2);
-                    const price = Math.max(num1, num2);
-                    if (qty > 0 && price > 0) return [{ quantity: qty, price: price }];
-                }
-            }
-
             const results = [];
-            // แยกข้อมูลด้วยการเว้นวรรค (space) หรือลูกน้ำ เผื่อพิมพ์หลายระดับในช่องเดียว
             const parts = strVal.split(/[\s,]+/);
             
             parts.forEach(p => {
-                // แยกจำนวนและราคา ด้วยเครื่องหมาย / หรือ : หรือ =
                 const subParts = p.split(/[:=\/|]/);
                 if (subParts.length >= 2) {
-                    // .replace ป้องกันเผื่อติดตัวหนังสือมา เช่น "3ชิ้น/1440บาท"
                     const qty = parseInt(subParts[0].replace(/[^\d]/g, ''), 10);
                     const price = parseFloat(subParts[1].replace(/[^\d.]/g, ''));
-                    
                     if (!isNaN(qty) && qty > 0 && !isNaN(price) && price > 0) {
                         results.push({ quantity: qty, price: price });
                     }
@@ -2135,80 +2114,84 @@ async importFromGoogleSheet(isAutomatic = false) {
         // เริ่มวนลูปประมวลผลข้อมูล
         // =========================================================
         for (const row of sheetData) {
-            const code = getVal(row, 'รหัสสินค้า', 'บาร์โค้ด');
-            const name = getVal(row, 'ชื่อการค้า', 'ชื่อสินค้า') ? String(getVal(row, 'ชื่อการค้า', 'ชื่อสินค้า')).trim() : 'ไม่มีชื่อ';
-            const finalCode = code ? String(code).trim() : name;
-            
-            if (!finalCode || finalCode === 'ไม่มีชื่อ') continue;
+            // ดึงรหัสสินค้า
+            let finalCode = String(getVal(row, 'รหัสสินค้า') || getVal(row, 'บาร์โค้ดในหน่วยนับที่1') || getVal(row, 'ชื่อการค้า') || '').trim();
+            if (!finalCode) continue;
 
-            // 🎯 1. ดึงราคาขายหลัก
-            let basePrice = parseNumberValue(getVal(row, 'ราคา 1', 'ราคาขาย'));
-
-            // 🎯 2. ประมวลผล "ระดับราคา" ทั้งหมด
-            let allTiers = [];
-            
-            // อ่านค่าจากคอลัมน์ 'ระดับที่ 1', 'ระดับที่ 2', 'ระดับที่ 3'
-            ['ระดับที่ 1', 'ระดับที่ 2', 'ระดับที่ 3'].forEach(colName => {
-                const tierData = parseTiers(getVal(row, colName));
-                allTiers = allTiers.concat(tierData);
-            });
-
-            // ตรวจสอบว่าในโปรโมชั่น มีราคาสำหรับซื้อ 1 ชิ้นหรือยัง?
-            // ถ้ายังไม่มี ให้เอาราคาขายหลัก (ราคา 1) ใส่เข้าไปเป็นฐาน
-            if (!allTiers.find(t => t.quantity === 1)) {
-                if (basePrice > 0) {
-                    allTiers.push({ quantity: 1, price: basePrice });
-                }
-            } else {
-                // ถ้าระบุ 1/490 ในระดับราคาแล้ว ให้ปรับ basePrice ตามนั้นเลย
-                const tier1 = allTiers.find(t => t.quantity === 1);
-                basePrice = tier1.price;
-            }
-
-            // เรียงลำดับระดับราคา จากซื้อจำนวนมากไปจำนวนน้อย เพื่อให้ POS คำนวณถูก
-            allTiers.sort((a, b) => b.quantity - a.quantity);
-
-            // ถ้าไม่มีราคาสักระดับเลย ข้ามสินค้านี้ไป
-            if (allTiers.length === 0) continue;
-
+            const name = String(getVal(row, 'ชื่อการค้า') || 'ไม่มีชื่อ').trim();
             const pricingUnits = [];
             
-            // 🎯 3. จัดการหน่วยที่ 1
-            const unit1 = getVal(row, 'หน่วยนับที่ 1', 'หน่วย 1') || 'ชิ้น';
-            const barcode1 = getVal(row, 'บาร์โค้ดในหน่วยนับ 1', 'บาร์โค้ด1') || finalCode;
+            // 🎯 1. จัดการ "หน่วยที่ 1" และ "ระดับราคา"
+            let basePrice = parseNumberValue(getVal(row, 'ราคา1'));
+            let allTiers = [];
+            ['ระดับที่1', 'ระดับที่2', 'ระดับที่3'].forEach(col => {
+                allTiers = allTiers.concat(parseTiers(getVal(row, col)));
+            });
 
+            const tier1 = allTiers.find(t => t.quantity === 1);
+            if (tier1) {
+                if (basePrice <= 0) basePrice = tier1.price;
+                else tier1.price = basePrice; 
+            } else {
+                if (basePrice > 0) allTiers.push({ quantity: 1, price: basePrice });
+            }
+            if (allTiers.length === 0 && basePrice <= 0) allTiers.push({ quantity: 1, price: 0 });
+            allTiers.sort((a, b) => b.quantity - a.quantity);
+
+            const unit1 = String(getVal(row, 'หน่วยนับที่1') || 'ชิ้น').trim();
+            const barcode1 = String(getVal(row, 'บาร์โค้ดในหน่วยนับที่1') || finalCode).trim();
+            
             pricingUnits.push({
-                unitName: String(unit1).trim(),
-                barcode: String(barcode1).trim(),
+                unitName: unit1,
+                barcode: barcode1,
                 cost: 0, 
                 conversionFactor: 1,
                 defaultPrice: basePrice,
-                priceTiers: allTiers // ยัดระดับราคาทั้งหมด (เช่น 8/3745, 3/1440, 1/490) ใส่ลงในหน่วยนี้
+                priceTiers: allTiers // ยัดโปรโมชั่นทั้งหมดให้หน่วยที่ 1
             });
 
-            // (ส่วนของหน่วยที่ 2 คงไว้ให้เผื่อใช้งาน แต่ไม่มีระดับราคาซ้อน)
-            const unit2 = getVal(row, 'หน่วยนับที่ 2', 'หน่วย 2');
+            // 🎯 2. นำ "หน่วยที่ 2" กลับมา!
+            const unit2 = String(getVal(row, 'หน่วยนับที่2') || '').trim();
             if (unit2) {
-                const factor2 = parseNumberValue(getVal(row, 'ค่าการแปลงหน่วยที่ 2', 'ตัวคูณ2')) || 1;
-                const explicitPrice2 = parseNumberValue(getVal(row, 'ราคา 2'));
+                const factor2 = parseNumberValue(getVal(row, 'ค่าการแปลงหน่วยที่2')) || 1;
+                // ดึง "ราคา 2" มาใช้ ถ้าเว้นว่างไว้ ค่อยเอา (ราคา 1 x ตัวคูณ)
+                const explicitPrice2 = parseNumberValue(getVal(row, 'ราคา2'));
                 const price2 = explicitPrice2 > 0 ? explicitPrice2 : (basePrice * factor2);
+                const barcode2 = String(getVal(row, 'บาร์โค้ดในหน่วยนับที่2') || '').trim();
 
                 pricingUnits.push({
-                    unitName: String(unit2).trim(),
-                    barcode: String(getVal(row, 'บาร์โค้ดในหน่วยนับ 2', 'บาร์โค้ด2') || '').trim(),
+                    unitName: unit2,
+                    barcode: barcode2,
                     cost: 0, 
                     conversionFactor: factor2,
                     defaultPrice: price2,
-                    priceTiers: [{ quantity: 1, price: price2 }]
+                    priceTiers: [{ quantity: 1, price: price2 }] // หน่วย 2 ไม่ซ้อนโปรโมชั่น
                 });
             }
 
-            // เตรียมข้อมูลลง Database
+            // 🎯 3. นำ "หน่วยที่ 3" กลับมาด้วย!
+            const unit3 = String(getVal(row, 'หน่วยนับที่3') || '').trim();
+            if (unit3) {
+                const factor3 = parseNumberValue(getVal(row, 'ค่าการแปลงหน่วยที่3')) || 1;
+                const explicitPrice3 = parseNumberValue(getVal(row, 'ราคา3'));
+                const price3 = explicitPrice3 > 0 ? explicitPrice3 : (basePrice * factor3);
+                const barcode3 = String(getVal(row, 'บาร์โค้ดในหน่วยนับที่3') || '').trim();
+
+                pricingUnits.push({
+                    unitName: unit3,
+                    barcode: barcode3,
+                    cost: 0, 
+                    conversionFactor: factor3,
+                    defaultPrice: price3,
+                    priceTiers: [{ quantity: 1, price: price3 }]
+                });
+            }
+
             const productData = {
                 productCode: finalCode,
                 productName: name,
-                baseUnit: String(unit1).trim(),
-                mainSellingUnit: String(unit1).trim(),
+                baseUnit: unit1,
+                mainSellingUnit: unit1,
                 cost: 0, 
                 pricingUnits: pricingUnits,
                 updatedAt: now
@@ -2239,7 +2222,7 @@ async importFromGoogleSheet(isAutomatic = false) {
         if (!isAutomatic) {
             document.getElementById('info-modal').style.display = 'none';
             this.setActiveOverlay(null);
-            setTimeout(() => alert("ซิงค์ข้อมูลสำเร็จ! ระบบรับรู้ระดับราคา (ขายส่ง) แล้ว 🎉"), 100);
+            setTimeout(() => alert("ซิงค์ข้อมูลสำเร็จ! นำหน่วยที่ 2 กลับมาใช้งานได้แล้ว 🎉"), 100);
         }
     } catch (e) {
         console.error(e);
