@@ -2050,7 +2050,7 @@ const response = await fetch(this.config.googleSheetUrl + '?t=' + new Date().get
 
 async importFromGoogleSheet(isAutomatic = false) {
     if (!isAutomatic) {
-        this.showInfoModal("กำลังนำเข้า...", "ระบบกำลังดึงข้อมูล สินค้า, หน่วยย่อย, หน่วยใหญ่ และโปรโมชั่น...");
+        this.showInfoModal("กำลังนำเข้า...", "ระบบกำลังตรวจสอบและอัปเดตเฉพาะสินค้าที่มีการเปลี่ยนแปลง...");
     }
 
     try {
@@ -2062,7 +2062,7 @@ async importFromGoogleSheet(isAutomatic = false) {
         const productsRef = this.getProductsCollectionRef();
         const now = new Date().toISOString();
 
-        // โหลดข้อมูลเก่าเพื่อเปรียบเทียบ
+        // 1. โหลดข้อมูลเก่าจาก Firestore มาเก็บไว้ในหน่วยความจำเพื่อเปรียบเทียบ
         const existingDocs = await api.getDocs(productsRef);
         const existingMap = new Map();
         existingDocs.forEach(doc => {
@@ -2071,6 +2071,9 @@ async importFromGoogleSheet(isAutomatic = false) {
         });
 
         let operations = [];
+        let skipCount = 0; // ตัวแปรเก็บสถิติว่าประหยัดโควตาไปได้กี่รายการ
+        let updateCount = 0;
+        let newCount = 0;
 
         // 🛠️ Helper แปลงตัวเลข ป้องกันค่าว่าง
         const parseNumberValue = (val) => {
@@ -2111,17 +2114,16 @@ async importFromGoogleSheet(isAutomatic = false) {
         };
 
         // =========================================================
-        // เริ่มวนลูปประมวลผลข้อมูล
+        // เริ่มวนลูปประมวลผลข้อมูลทีละแถวจาก Sheets
         // =========================================================
         for (const row of sheetData) {
-            // ดึงรหัสสินค้า
             let finalCode = String(getVal(row, 'รหัสสินค้า') || getVal(row, 'บาร์โค้ดในหน่วยนับที่1') || getVal(row, 'ชื่อการค้า') || '').trim();
             if (!finalCode) continue;
 
             const name = String(getVal(row, 'ชื่อการค้า') || 'ไม่มีชื่อ').trim();
             const pricingUnits = [];
             
-            // 🎯 1. จัดการ "หน่วยที่ 1" และ "ระดับราคา"
+            // 🎯 จัดการ "หน่วยที่ 1" และ "ระดับราคา"
             let basePrice = parseNumberValue(getVal(row, 'ราคา1'));
             let allTiers = [];
             ['ระดับที่1', 'ระดับที่2', 'ระดับที่3'].forEach(col => {
@@ -2147,14 +2149,13 @@ async importFromGoogleSheet(isAutomatic = false) {
                 cost: 0, 
                 conversionFactor: 1,
                 defaultPrice: basePrice,
-                priceTiers: allTiers // ยัดโปรโมชั่นทั้งหมดให้หน่วยที่ 1
+                priceTiers: allTiers
             });
 
-            // 🎯 2. นำ "หน่วยที่ 2" กลับมา!
+            // 🎯 จัดการ "หน่วยที่ 2"
             const unit2 = String(getVal(row, 'หน่วยนับที่2') || '').trim();
             if (unit2) {
                 const factor2 = parseNumberValue(getVal(row, 'ค่าการแปลงหน่วยที่2')) || 1;
-                // ดึง "ราคา 2" มาใช้ ถ้าเว้นว่างไว้ ค่อยเอา (ราคา 1 x ตัวคูณ)
                 const explicitPrice2 = parseNumberValue(getVal(row, 'ราคา2'));
                 const price2 = explicitPrice2 > 0 ? explicitPrice2 : (basePrice * factor2);
                 const barcode2 = String(getVal(row, 'บาร์โค้ดในหน่วยนับที่2') || '').trim();
@@ -2165,11 +2166,11 @@ async importFromGoogleSheet(isAutomatic = false) {
                     cost: 0, 
                     conversionFactor: factor2,
                     defaultPrice: price2,
-                    priceTiers: [{ quantity: 1, price: price2 }] // หน่วย 2 ไม่ซ้อนโปรโมชั่น
+                    priceTiers: [{ quantity: 1, price: price2 }]
                 });
             }
 
-            // 🎯 3. นำ "หน่วยที่ 3" กลับมาด้วย!
+            // 🎯 จัดการ "หน่วยที่ 3"
             const unit3 = String(getVal(row, 'หน่วยนับที่3') || '').trim();
             if (unit3) {
                 const factor3 = parseNumberValue(getVal(row, 'ค่าการแปลงหน่วยที่3')) || 1;
@@ -2187,6 +2188,7 @@ async importFromGoogleSheet(isAutomatic = false) {
                 });
             }
 
+            // เตรียมข้อมูลที่เพิ่งอ่านมา
             const productData = {
                 productCode: finalCode,
                 productName: name,
@@ -2198,16 +2200,42 @@ async importFromGoogleSheet(isAutomatic = false) {
             };
 
             const existing = existingMap.get(finalCode);
+            
+            // 🌟 [หัวใจสำคัญของการประหยัดโควตา: Smart Update] 🌟
             if (existing) {
-                operations.push({ type: 'UPDATE', ref: api.doc(productsRef, existing.id), data: productData });
+                // ดึงเฉพาะข้อมูลสำคัญมาแปลงเป็น String เพื่อเปรียบเทียบ (ข้ามค่าเวลา updatedAt)
+                const oldDataStr = JSON.stringify({
+                    productName: existing.data.productName,
+                    baseUnit: existing.data.baseUnit,
+                    mainSellingUnit: existing.data.mainSellingUnit,
+                    pricingUnits: existing.data.pricingUnits
+                });
+                
+                const newDataStr = JSON.stringify({
+                    productName: productData.productName,
+                    baseUnit: productData.baseUnit,
+                    mainSellingUnit: productData.mainSellingUnit,
+                    pricingUnits: productData.pricingUnits
+                });
+
+                if (oldDataStr !== newDataStr) {
+                    // ข้อมูลเปลี่ยน สั่งอัปเดต
+                    operations.push({ type: 'UPDATE', ref: api.doc(productsRef, existing.id), data: productData });
+                    updateCount++;
+                } else {
+                    // ข้อมูลเหมือนเดิมเป๊ะ ข้ามไปเลย! (ประหยัด Write Quota)
+                    skipCount++;
+                }
             } else {
+                // ไม่พบในระบบ เป็นสินค้าใหม่ สั่งเพิ่ม
                 productData.createdAt = now;
-                productData.stockInBaseUnits = 0;
+                productData.stockInBaseUnits = 0; // เริ่มต้นสต็อกที่ 0 เสมอสำหรับของใหม่
                 operations.push({ type: 'SET', ref: api.doc(productsRef), data: productData });
+                newCount++;
             }
         }
 
-        // เขียนลง Firebase แบบ Batch
+        // เขียนลง Firebase แบบ Batch (ทำงานเฉพาะตัวที่ operations.push เข้ามา)
         const CHUNK_SIZE = 400;
         for (let i = 0; i < operations.length; i += CHUNK_SIZE) {
             const chunk = operations.slice(i, i + CHUNK_SIZE);
@@ -2222,10 +2250,14 @@ async importFromGoogleSheet(isAutomatic = false) {
         if (!isAutomatic) {
             document.getElementById('info-modal').style.display = 'none';
             this.setActiveOverlay(null);
-            setTimeout(() => alert("ซิงค์ข้อมูลสำเร็จ! นำหน่วยที่ 2 กลับมาใช้งานได้แล้ว 🎉"), 100);
+            
+            // แสดงผลลัพธ์ว่าเซฟโควตาไปได้เท่าไหร่
+            const resultMsg = `ซิงค์เสร็จสิ้น!\nเพิ่มใหม่: ${newCount} รายการ\nอัปเดต: ${updateCount} รายการ\nข้าม (ข้อมูลไม่เปลี่ยน): ${skipCount} รายการ (ช่วยประหยัดโควตา!)`;
+            setTimeout(() => alert(resultMsg), 100);
+            console.log(resultMsg);
         }
     } catch (e) {
-        console.error(e);
+        console.error("Import Error:", e);
         if (!isAutomatic) this.showInfoModal("ผิดพลาด", "ไม่สามารถดึงข้อมูลได้: " + e.message, true);
     }
 },
