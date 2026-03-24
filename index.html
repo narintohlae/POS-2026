@@ -2050,7 +2050,7 @@ const response = await fetch(this.config.googleSheetUrl + '?t=' + new Date().get
 
 async importFromGoogleSheet(isAutomatic = false) {
     if (!isAutomatic) {
-        this.showInfoModal("กำลังนำเข้า...", "ระบบกำลังดึงบาร์โค้ดที่ถูกต้องจาก Google Sheets...");
+        this.showInfoModal("กำลังนำเข้า...", "ระบบกำลังดึงบาร์โค้ดและต้นทุนที่ถูกต้องจาก Google Sheets...");
     }
 
     try {
@@ -2080,7 +2080,7 @@ async importFromGoogleSheet(isAutomatic = false) {
             return parseFloat(cleanVal) || 0;
         };
 
-        // ✨ แก้ไข: ทำให้ getVal รับชื่อคอลัมน์ได้หลายๆ แบบพร้อมกัน (กันพลาด)
+        // ✨ ทำให้ getVal รับชื่อคอลัมน์ได้หลายๆ แบบพร้อมกัน (กันพลาด)
         const getVal = (row, ...colNames) => {
             for (let colName of colNames) {
                 const target = String(colName).replace(/\s+/g, '').toLowerCase();
@@ -2121,7 +2121,10 @@ async importFromGoogleSheet(isAutomatic = false) {
             const name = String(getVal(row, 'ชื่อการค้า', 'ชื่อสินค้า') || 'ไม่มีชื่อ').trim();
             const pricingUnits = [];
             
+            // ✨ [เพิ่มใหม่] ดึงต้นทุนหลัก
             let basePrice = parseNumberValue(getVal(row, 'ราคา1', 'ราคา'));
+            let baseCost = parseNumberValue(getVal(row, 'ต้นทุน', 'ทุน', 'ราคาต้นทุน', 'ต้นทุน/หน่วย', 'ต้นทุน1'));
+
             let allTiers = [];
             ['ระดับที่1', 'ระดับที่2', 'ระดับที่3'].forEach(col => {
                 allTiers = allTiers.concat(parseTiers(getVal(row, col)));
@@ -2140,14 +2143,13 @@ async importFromGoogleSheet(isAutomatic = false) {
             // 🎯 จัดการ "หน่วยที่ 1"
             const unit1 = String(getVal(row, 'หน่วยนับที่1', 'หน่วย1') || 'ชิ้น').trim();
             
-            // ✨ แก้ไข: ไล่เช็กชื่อคอลัมน์บาร์โค้ดให้ครอบคลุมที่สุด
             let rawBarcode1 = getVal(row, 'บาร์โค้ดในหน่วยนับ1', 'บาร์โค้ดในหน่วยนับที่1', 'บาร์โค้ด1', 'บาร์โค้ด');
             const barcode1 = String(rawBarcode1 || finalCode).trim(); 
             
             pricingUnits.push({
                 unitName: unit1,
-                barcode: barcode1, // ได้บาร์โค้ดที่ถูกต้องแล้ว!
-                cost: 0, 
+                barcode: barcode1, 
+                cost: baseCost, // ✨ อัปเดตต้นทุน
                 conversionFactor: 1,
                 defaultPrice: basePrice,
                 priceTiers: allTiers
@@ -2160,14 +2162,17 @@ async importFromGoogleSheet(isAutomatic = false) {
                 const explicitPrice2 = parseNumberValue(getVal(row, 'ราคา2'));
                 const price2 = explicitPrice2 > 0 ? explicitPrice2 : (basePrice * factor2);
                 
-                // ✨ แก้ไข
+                // ✨ [เพิ่มใหม่] คำนวณต้นทุนให้หน่วย 2
+                const explicitCost2 = parseNumberValue(getVal(row, 'ต้นทุน2', 'ทุน2'));
+                const cost2 = explicitCost2 > 0 ? explicitCost2 : (baseCost * factor2);
+
                 let rawBarcode2 = getVal(row, 'บาร์โค้ดในหน่วยนับ2', 'บาร์โค้ดในหน่วยนับที่2', 'บาร์โค้ด2');
                 const barcode2 = String(rawBarcode2 || '').trim();
 
                 pricingUnits.push({
                     unitName: unit2,
                     barcode: barcode2, 
-                    cost: 0, 
+                    cost: cost2, // ✨ อัปเดตต้นทุน
                     conversionFactor: factor2,
                     defaultPrice: price2,
                     priceTiers: [{ quantity: 1, price: price2 }]
@@ -2181,14 +2186,17 @@ async importFromGoogleSheet(isAutomatic = false) {
                 const explicitPrice3 = parseNumberValue(getVal(row, 'ราคา3'));
                 const price3 = explicitPrice3 > 0 ? explicitPrice3 : (basePrice * factor3);
                 
-                // ✨ แก้ไข
+                // ✨ [เพิ่มใหม่] คำนวณต้นทุนให้หน่วย 3
+                const explicitCost3 = parseNumberValue(getVal(row, 'ต้นทุน3', 'ทุน3'));
+                const cost3 = explicitCost3 > 0 ? explicitCost3 : (baseCost * factor3);
+
                 let rawBarcode3 = getVal(row, 'บาร์โค้ดในหน่วยนับ3', 'บาร์โค้ดในหน่วยนับที่3', 'บาร์โค้ด3');
                 const barcode3 = String(rawBarcode3 || '').trim();
 
                 pricingUnits.push({
                     unitName: unit3,
                     barcode: barcode3,
-                    cost: 0, 
+                    cost: cost3, // ✨ อัปเดตต้นทุน
                     conversionFactor: factor3,
                     defaultPrice: price3,
                     priceTiers: [{ quantity: 1, price: price3 }]
@@ -2200,7 +2208,7 @@ async importFromGoogleSheet(isAutomatic = false) {
                 productName: name,
                 baseUnit: unit1,
                 mainSellingUnit: unit1,
-                cost: 0, 
+                cost: baseCost, // ✨ อัปเดตต้นทุนหลัก
                 pricingUnits: pricingUnits, 
                 updatedAt: now
             };
@@ -2212,13 +2220,15 @@ async importFromGoogleSheet(isAutomatic = false) {
                     productName: existing.data.productName,
                     baseUnit: existing.data.baseUnit,
                     mainSellingUnit: existing.data.mainSellingUnit,
-                    pricingUnits: existing.data.pricingUnits // ตรงนี้จะเช็กว่าบาร์โค้ดเปลี่ยนด้วย ถ้าเปลี่ยนมันจะอัปเดตอัตโนมัติ
+                    cost: existing.data.cost, // ✨ เพิ่มเช็กต้นทุนด้วย
+                    pricingUnits: existing.data.pricingUnits 
                 });
                 
                 const newDataStr = JSON.stringify({
                     productName: productData.productName,
                     baseUnit: productData.baseUnit,
                     mainSellingUnit: productData.mainSellingUnit,
+                    cost: productData.cost, // ✨ เพิ่มเช็กต้นทุนด้วย
                     pricingUnits: productData.pricingUnits
                 });
 
@@ -2250,7 +2260,7 @@ async importFromGoogleSheet(isAutomatic = false) {
         if (!isAutomatic) {
             document.getElementById('info-modal').style.display = 'none';
             this.setActiveOverlay(null);
-            const resultMsg = `อัปเดตบาร์โค้ดสำเร็จ!\nเพิ่มใหม่: ${newCount}\nอัปเดต: ${updateCount}\nข้าม: ${skipCount}`;
+            const resultMsg = `อัปเดตบาร์โค้ดและต้นทุนสำเร็จ!\nเพิ่มใหม่: ${newCount}\nอัปเดต: ${updateCount}\nข้าม: ${skipCount}`;
             setTimeout(() => alert(resultMsg), 100);
         }
     } catch (e) {
