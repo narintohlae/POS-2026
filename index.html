@@ -5167,6 +5167,31 @@ document.addEventListener("DOMContentLoaded", function() {
     }, 1000);
 });
 </script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // ใช้ setTimeout เพื่อรอให้ระบบหลัก (POS_APP) เรนเดอร์เสร็จก่อน
+    setTimeout(function() {
+        const searchInput = document.getElementById('barcode-input');
+        
+        if (searchInput) {
+            searchInput.addEventListener('keydown', function(e) {
+                // ดักจับเมื่อกดปุ่ม Tab (และไม่ได้กด Shift ค้างไว้)
+                if (e.key === 'Tab' && !e.shiftKey) {
+                    
+                    // เปลี่ยนมาหาช่องกรอกจำนวนของ "รายการล่าสุด (ล่างสุด)" ในตะกร้า
+                    const lastQtyInput = document.querySelector('#cart-items li:last-child .col-qty input');
+
+                    if (lastQtyInput) {
+                        e.preventDefault(); // ยกเลิกการกระโดดไปปุ่มอื่นตามปกติของเบราว์เซอร์
+                        lastQtyInput.focus(); // โฟกัสที่ช่องจำนวนรายการล่าสุด
+                        lastQtyInput.select(); // คลุมดำตัวเลขเดิม เพื่อให้พิมพ์ตัวเลขใหม่ทับได้ทันที
+                    }
+                }
+            });
+        }
+    }, 1500); // หน่วงเวลา 1.5 วินาทีเผื่อ UI โหลด
+});
+</script>
 </body></html>
 
 <script>
