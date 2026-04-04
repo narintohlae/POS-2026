@@ -4625,7 +4625,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 3. จัดการ Event กดปุ่ม Esc
+// 3. จัดการ Event กดปุ่ม Esc
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             const currentUser = window.POS_APP?.state?.currentUser;
@@ -4637,14 +4637,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 escTimer = null;
             }, HOLD_DURATION);
         }
-    });
+    }, true); // <--- เพิ่ม true เพื่อดักจับใน Capture Phase
 
     document.addEventListener('keyup', (e) => {
         if (e.key === 'Escape' && escTimer) {
             clearTimeout(escTimer);
             escTimer = null;
         }
-    });
+    }, true); // <--- เพิ่ม true เพื่อดักจับใน Capture Phase
 
     // 4. ตรวจสอบค่าเริ่มต้นตอนโหลดหน้า
     const pref = localStorage.getItem('user_pref_show_summary');
