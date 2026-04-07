@@ -5146,9 +5146,14 @@ document.addEventListener("DOMContentLoaded", function() {
             }
         };
 
-        const searchInput = document.getElementById('barcode-input');
+const searchInput = document.getElementById('barcode-input');
         if (searchInput) {
             searchInput.addEventListener('keydown', function(e) {
+                // [เพิ่มเงื่อนไขนี้] ปล่อยผ่านถ้ากด Ctrl เพื่อให้ใช้ Ctrl+ซ้าย/ขวา สลับบิลได้
+                if (e.ctrlKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+                    return;
+                }
+
                 const targetKeys = ['Enter', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Escape'];
                 if (targetKeys.includes(e.key)) {
                     e.stopImmediatePropagation(); 
