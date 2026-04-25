@@ -3136,7 +3136,22 @@ updateCartDisplay() {
             this.hideProductMgmtModal(); } 
             else if (document.getElementById('product-editor-modal').style.display === 'flex') { e.preventDefault();
             this.hideProductEditorModal(); } 
-        } 
+        }
+        else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+            // 1. เช็คว่าเคอร์เซอร์ไม่ได้อยู่ในช่องกรอกข้อมูลอื่นๆ (เช่น กำลังพิมพ์จำนวนสินค้า หรือส่วนลด)
+            const activeEl = document.activeElement;
+            const isTypingInInput = activeEl && ['input', 'textarea', 'select'].includes(activeEl.tagName.toLowerCase());
+
+            // 2. ถ้าไม่ได้พิมพ์ในช่องอื่นอยู่ และไม่มีหน้าต่าง Modal ป๊อปอัปเปิดทับอยู่
+            if (!isTypingInInput && !this.state.activeOverlay) {
+                const searchInput = document.getElementById('barcode-input');
+                if (searchInput && !searchInput.disabled) {
+                    // ดึงเคอร์เซอร์ไปที่ช่องค้นหา
+                    searchInput.focus();
+                    // ไม่ต้องใส่ e.preventDefault() เพื่อปล่อยให้ตัวอักษรที่กด ถูกพิมพ์ลงไปในช่องอัตโนมัติ
+                }
+            }
+        }
     },
     navigateSearchResults(direction) { 
         if (this.state.currentSearchResults.length === 0) return;
